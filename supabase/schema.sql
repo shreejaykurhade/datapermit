@@ -75,3 +75,49 @@ begin
 end; $$;
 revoke all on function public.provision_permit(text,text,text) from public,anon,authenticated;
 grant execute on function public.provision_permit(text,text,text) to service_role;
+alter table public.datasets add column if not exists family_id text;
+alter table public.datasets add column if not exists revenue_shares jsonb not null default '[]';
+create unique index if not exists dataset_family_versions on public.datasets(family_id,version) where family_id is not null;
+create table if not exists public.campaigns(id text primary key,title text not null,brief text not null,company text not null,verifiers text[] not null,questions jsonb not null,status text not null default 'open' check(status in ('open','closed')),created_at timestamptz not null default now());
+create table if not exists public.contributions(id text primary key,campaign_id text not null references public.campaigns(id),participant text not null,answers jsonb not null,signature text not null,created_at timestamptz not null default now(),unique(campaign_id,participant));
+create table if not exists public.question_clusters(id text primary key,campaign_id text not null references public.campaigns(id),question_id text not null,content_hash text not null,title text not null,summary text not null,language text not null,members jsonb not null,provider text not null,model text not null,created_at timestamptz not null default now());
+create table if not exists public.expert_reviews(id text primary key,campaign_id text not null references public.campaigns(id),cluster_id text not null unique references public.question_clusters(id),verifier text not null,decision text not null check(decision in ('accepted','rejected')),notes text not null,signature text not null,created_at timestamptz not null default now());
+alter table public.campaigns enable row level security;
+alter table public.contributions enable row level security;
+alter table public.question_clusters enable row level security;
+alter table public.expert_reviews enable row level security;
+create or replace function public.submit_contribution(p_id text,p_campaign text,p_participant text,p_answers jsonb,p_signature text)
+returns void language plpgsql security definer set search_path=public as $$
+declare c public.campaigns;
+begin
+ select * into c from public.campaigns where id=p_campaign for update;
+ if not found or c.status<>'open' then raise exception 'Campaign is closed';end if;
+ if c.company=p_participant or p_participant=any(c.verifiers) then raise exception 'Company and verifiers cannot contribute';end if;
+ if (select count(*) from public.contributions where campaign_id=p_campaign)>=20 then raise exception 'Campaign participant limit reached';end if;
+ if jsonb_array_length(p_answers)<>50 then raise exception 'All 50 answers required';end if;
+ insert into public.contributions(id,campaign_id,participant,answers,signature) values(p_id,p_campaign,p_participant,p_answers,p_signature);
+end;$$;
+create or replace function public.close_campaign(p_id text,p_company text)
+returns void language plpgsql security definer set search_path=public as $$
+begin
+ perform 1 from public.campaigns where id=p_id and company=p_company for update;
+ if not found then raise exception 'Not company owner';end if;
+ if not exists(select 1 from public.contributions where campaign_id=p_id) then raise exception 'No contributions yet';end if;
+ update public.campaigns set status='closed' where id=p_id;
+end;$$;
+create or replace function public.save_question_clusters(p_campaign text,p_question text,p_company text,p_clusters jsonb)
+returns void language plpgsql security definer set search_path=public as $$
+begin
+ perform 1 from public.campaigns where id=p_campaign and company=p_company and status='closed' for update;
+ if not found then raise exception 'Closed company campaign required';end if;
+ if exists(select 1 from public.question_clusters where campaign_id=p_campaign and question_id=p_question) then raise exception 'Question already clustered';end if;
+ insert into public.question_clusters(id,campaign_id,question_id,content_hash,title,summary,language,members,provider,model)
+ select x.id,p_campaign,p_question,x.content_hash,x.title,x.summary,x.language,x.members,x.provider,x.model
+ from jsonb_to_recordset(p_clusters) as x(id text,content_hash text,title text,summary text,language text,members jsonb,provider text,model text);
+end;$$;
+revoke all on function public.submit_contribution(text,text,text,jsonb,text) from public,anon,authenticated;
+revoke all on function public.close_campaign(text,text) from public,anon,authenticated;
+revoke all on function public.save_question_clusters(text,text,text,jsonb) from public,anon,authenticated;
+grant execute on function public.submit_contribution(text,text,text,jsonb,text) to service_role;
+grant execute on function public.close_campaign(text,text) to service_role;
+grant execute on function public.save_question_clusters(text,text,text,jsonb) to service_role;

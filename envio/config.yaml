@@ -6,6 +6,7 @@ contracts:
     events:
       - event: "PermitPurchased(uint256 indexed permitId, bytes32 indexed datasetId, address indexed buyer, address publisher, uint256 amount, uint64 expiresAt, uint32 quota)"
       - event: "PermitRevoked(uint256 indexed permitId)"
+      - event: "EarningsWithdrawn(address indexed recipient, uint256 amount)"
 chains:
   - id: 10143
     rpc: https://testnet-rpc.monad.xyz

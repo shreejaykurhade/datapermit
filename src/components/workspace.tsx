@@ -40,6 +40,14 @@ import {
   datasetKey,
   termsKey,
 } from "@/lib/chain";
+import { ContributionHub } from "./contribution-hub";
+import { RevenueEditor, Earnings } from "./revenue-tools";
+import {
+  validateShares,
+  allocateRevenue,
+  type RevenueShare,
+} from "@/lib/revenue";
+import { demoCompany } from "@/lib/contributions";
 import { SponsorTools, AuroraFunding } from "./sponsor-tools";
 import { encryptDataset } from "@/lib/encryption";
 import {
@@ -50,9 +58,15 @@ import {
 } from "@/lib/wallet";
 
 type View =
-  "Discover" | "My permits" | "Publisher studio" | "Activity" | "Developer";
+  | "Discover"
+  | "Contributions"
+  | "My permits"
+  | "Publisher studio"
+  | "Activity"
+  | "Developer";
 const navigation = [
   { name: "Discover" as View, icon: LayoutGrid },
+  { name: "Contributions" as View, icon: ShieldCheck },
   { name: "My permits" as View, icon: KeyRound },
   { name: "Publisher studio" as View, icon: Plus },
   { name: "Activity" as View, icon: ActivityIcon },
@@ -110,6 +124,8 @@ function mapDataset(d: Record<string, unknown>): Dataset {
     durationDays: Number(d.duration_days),
     quota: Number(d.quota),
     version: String(d.version),
+    familyId: d.family_id ? String(d.family_id) : undefined,
+    revenueShares: (d.revenue_shares || []) as RevenueShare[],
     terms: String(d.terms),
     digest: String(d.digest),
     records: d.sample as RecordRow[],
@@ -174,6 +190,8 @@ export function Workspace() {
     aurora: boolean;
   } | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [family, setFamily] = useState("");
+  const [shares, setShares] = useState<RevenueShare[]>([]);
   const [recordsText, setRecordsText] = useState(
     JSON.stringify(exampleRecords, null, 2),
   );
@@ -210,6 +228,9 @@ export function Workspace() {
       txHash: string;
       revoked: boolean;
     }[]
+  >([]);
+  const [indexedWithdrawals, setIndexedWithdrawals] = useState<
+    { id: string; amount: string | number; txHash: string }[]
   >([]);
   useEffect(() => {
     try {
@@ -260,6 +281,7 @@ export function Workspace() {
       activity: activity.activity,
     }));
     setIndexed(indexer.purchases);
+    setIndexedWithdrawals(indexer.withdrawals || []);
   }
   async function signIn(create: boolean) {
     await task("Connecting passkey", async () => {
@@ -287,6 +309,12 @@ export function Workspace() {
       setMode("live");
       setAccountModal(false);
       setState(freshState());
+      if (mode === "demo") {
+        localStorage.removeItem("datapermit.contributions.v1");
+        for (const key of Object.keys(localStorage))
+          if (key.startsWith("datapermit.contribution-draft.demo."))
+            localStorage.removeItem(key);
+      }
       await refresh();
       setNotice(`Signed in with Mera on ${appChain.name}.`);
     });
@@ -303,7 +331,11 @@ export function Workspace() {
       } catch {
         throw new Error("Records must be valid JSON.");
       }
-      const parsed = publishSchema.safeParse({ ...form, records });
+      const parsed = publishSchema.safeParse({
+        ...form,
+        records,
+        revenueShares: shares,
+      });
       if (!parsed.success)
         throw new Error(
           parsed.error.issues
@@ -311,10 +343,23 @@ export function Workspace() {
             .join(" · "),
         );
       const hash = await digest(parsed.data.records);
-      const id = `${form.title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .slice(0, 40)}-${crypto.randomUUID().slice(0, 8)}`;
+      const revenueShares = validateShares(
+        parsed.data.revenueShares,
+        mode === "live" ? address : demoCompany,
+      );
+      const familyId =
+        family ||
+        form.title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .slice(0, 40) +
+          "-" +
+          crypto.randomUUID().slice(0, 8);
+      const id = familyId + "@" + form.version;
+      if (state.datasets.some((d) => d.id === id))
+        throw new Error(
+          "This version already exists. Use a new version number.",
+        );
       if (mode === "live") {
         if (!contractAddress || !tokenAddress)
           throw new Error("Configure the contract first.");
@@ -327,6 +372,18 @@ export function Workspace() {
           id,
           publisherVaultKey(),
         );
+        if (
+          JSON.stringify({
+            ...parsed.data,
+            id,
+            familyId,
+            revenueShares,
+            ...encryptedPayload,
+          }).length > 1_900_000
+        )
+          throw new Error(
+            "This dataset exceeds the upload limit. Publish a smaller version before registering it on-chain.",
+          );
         const client = wallet();
         const decimals = await chainClient.readContract({
           address: tokenAddress,
@@ -336,27 +393,39 @@ export function Workspace() {
         const tx = await client.writeContract({
           address: contractAddress,
           abi: permitAbi,
-          functionName: "registerDataset",
+          functionName: "registerVersion",
           args: [
-            datasetKey(id),
+            datasetKey(familyId),
+            termsKey(form.version),
             parseUnits(form.price, decimals),
             BigInt(form.durationDays * 86400),
             form.quota,
             hash as `0x${string}`,
             termsKey(form.terms),
+            revenueShares.map((s) => s.recipient as `0x${string}`),
+            revenueShares.map((s) => s.bps),
+            revenueShares.map((s) => (s.role === "contributor" ? 1 : 2)),
           ],
         });
         await chainClient.waitForTransactionReceipt({ hash: tx });
         await api(
           "/api/datasets",
-          json({ ...parsed.data, id, ...encryptedPayload }),
+          json({
+            ...parsed.data,
+            id,
+            familyId,
+            revenueShares,
+            ...encryptedPayload,
+          }),
         );
         await refresh();
       } else {
         const dataset: Dataset = {
           ...parsed.data,
           id,
-          publisher: "You · demo publisher",
+          publisher: demoCompany,
+          familyId,
+          revenueShares,
           digest: hash,
           createdAt: new Date().toISOString(),
         };
@@ -369,6 +438,8 @@ export function Workspace() {
         );
       }
       setForm(emptyForm);
+      setFamily("");
+      setShares([]);
       setRights(false);
       setView("Discover");
       setNotice("Dataset published. Buyers can now preview and license it.");
@@ -440,7 +511,23 @@ export function Workspace() {
         };
         setState((s) =>
           log(
-            { ...s, permits: [permit, ...s.permits] },
+            {
+              ...s,
+              permits: [permit, ...s.permits],
+              earnings: allocateRevenue(
+                parseUnits(selected.price, 6),
+                selected.revenueShares || [],
+                selected.publisher,
+              ).reduce(
+                (balances, r) => ({
+                  ...balances,
+                  [r.recipient]: (
+                    BigInt(balances[r.recipient] || "0") + r.amount
+                  ).toString(),
+                }),
+                { ...(s.earnings || {}) },
+              ),
+            },
             "Demo permit created",
             `${selected.title} · license v${selected.version}`,
           ),
@@ -579,6 +666,7 @@ export function Workspace() {
     setAddress("");
     setTokens({});
     setIndexed([]);
+    setIndexedWithdrawals([]);
     setAgentResult(null);
     setState(freshState());
     setSelected(null);
@@ -664,7 +752,7 @@ export function Workspace() {
           <div className="top-actions">
             <span className={`mode-pill ${mode === "live" ? "live" : ""}`}>
               <span className="status-dot" />
-              {mode === "demo" ? "Demo workspace" : "Live · testnet"}
+              {mode === "demo" ? "Demo workspace" : `Live · ${appChain.name}`}
             </span>
             <button
               className="account-button"
@@ -692,6 +780,51 @@ export function Workspace() {
                 <X size={16} />
               </button>
             </div>
+          )}
+          {view === "Contributions" && (
+            <ContributionHub
+              mode={mode}
+              address={address}
+              onPublish={(rows, title, contributors, verifiers) => {
+                setRecordsText(JSON.stringify(rows, null, 2));
+                setForm({
+                  ...emptyForm,
+                  title,
+                  language: "Multilingual",
+                  category: "Image annotation",
+                  description:
+                    "Human-reviewed multilingual image annotation answers collected for " +
+                    title,
+                  terms:
+                    defaultTerms +
+                    " Original image rights and permitted downstream training must be reviewed separately.",
+                });
+                setFamily("");
+                const recipients = [
+                  ...contributors.map((recipient) => ({
+                    recipient,
+                    role: "contributor" as const,
+                  })),
+                  ...verifiers.map((recipient) => ({
+                    recipient,
+                    role: "verifier" as const,
+                  })),
+                ];
+                setShares(
+                  recipients.length <= 20
+                    ? recipients.map((r) => ({
+                        ...r,
+                        bps: Math.floor(3000 / recipients.length),
+                      }))
+                    : [],
+                );
+                setRights(false);
+                setView("Publisher studio");
+                setNotice(
+                  "Reviewed answers prepared. Review the proposed 30% recipient allocation and set exact shares, price, and version. If there are more than 20 recipients, no split is proposed. Download the contribution provenance separately.",
+                );
+              }}
+            />
           )}
           {view === "Discover" && (
             <>
@@ -844,6 +977,7 @@ export function Workspace() {
                     "Customer support",
                     "Language understanding",
                     "Agent safety",
+                    "Image annotation",
                   ].map((item) => (
                     <button
                       className={filter === item ? "selected" : ""}
@@ -1152,6 +1286,47 @@ export function Workspace() {
                       </select>
                     </label>
                   </div>
+                  <div className="form-row">
+                    <label>
+                      Dataset identity
+                      <select
+                        value={family}
+                        onChange={(e) => setFamily(e.target.value)}
+                      >
+                        <option value="">Create a new dataset</option>
+                        {Array.from(
+                          new Map(
+                            state.datasets
+                              .filter(
+                                (d) =>
+                                  d.familyId &&
+                                  d.publisher.toLowerCase() ===
+                                    (mode === "live"
+                                      ? address.toLowerCase()
+                                      : demoCompany),
+                              )
+                              .map((d) => [d.familyId, d]),
+                          ).values(),
+                        ).map((d) => (
+                          <option key={d.familyId} value={d.familyId}>
+                            New version of {d.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Version
+                      <input
+                        value={form.version}
+                        onChange={(e) =>
+                          setForm({ ...form, version: e.target.value })
+                        }
+                        placeholder="1.0.0"
+                        required
+                      />
+                    </label>
+                  </div>
+                  <RevenueEditor shares={shares} onChange={setShares} />
                   <div className="form-row three">
                     <label>
                       Price ({mode === "demo" ? "demo credits" : symbol})
@@ -1353,6 +1528,22 @@ export function Workspace() {
                 description="Retrieve licensed records, inspect access, and evaluate an assistant response."
               />
               {mode === "live" && <AuroraFunding address={address} />}
+              <Earnings
+                mode={mode}
+                earnings={state.earnings || {}}
+                onDemoWithdraw={(recipient) =>
+                  setState((s) =>
+                    log(
+                      {
+                        ...s,
+                        earnings: { ...(s.earnings || {}), [recipient]: "0" },
+                      },
+                      "Demo withdrawal",
+                      recipient,
+                    ),
+                  )
+                }
+              />
               <section className="panel agent-panel">
                 <div className="panel-heading">
                   <FlaskConical size={20} />
@@ -1672,9 +1863,23 @@ export function Workspace() {
           {view === "Activity" && mode === "live" && health?.envio && (
             <section className="panel indexed-panel">
               <h3>Envio settlement receipts</h3>
+              {indexedWithdrawals.map((w) => (
+                <div className="indexed-row" key={w.id}>
+                  <span>Earnings withdrawn</span>
+                  <a
+                    className="small-link"
+                    href={`${explorerUrl}/tx/${w.txHash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Withdrawal transaction <ArrowUpRight size={12} />
+                  </a>
+                </div>
+              ))}
               <p className="fine-print">
-                Contract purchases and revocations indexed by HyperIndex. These
-                receipts do not replace gateway authorization.
+                Purchase accruals, revocations, and earnings withdrawals indexed
+                by HyperIndex. These receipts do not replace gateway
+                authorization.
               </p>
               {indexed.length ? (
                 indexed.map((p) => (
@@ -1763,6 +1968,28 @@ export function Workspace() {
                   <small>Expected: {r.expected}</small>
                 </div>
               ))}
+            </div>
+            <div className="detail-section">
+              <div className="eyebrow">LOCKED REVENUE SPLIT</div>
+              <p>
+                Company:{" "}
+                {(10000 -
+                  (selected.revenueShares || []).reduce(
+                    (sum, s) => sum + s.bps,
+                    0,
+                  )) /
+                  100}
+                %
+              </p>
+              {(selected.revenueShares || []).map((s) => (
+                <p key={s.recipient}>
+                  {s.role}: {short(s.recipient)} · {s.bps / 100}%
+                </p>
+              ))}
+              <p className="fine-print">
+                Each purchase credits the recipients’ earnings. They withdraw
+                accumulated payments to their own wallets.
+              </p>
             </div>
             <div className="detail-section">
               <div className="eyebrow">LICENSE TERMS</div>

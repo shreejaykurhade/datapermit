@@ -15,7 +15,7 @@ export async function GET() {
       },
       body: JSON.stringify({
         query:
-          "query Purchases($buyer: String!) { Purchase(where: {buyer: {_eq: $buyer}}, order_by: {timestamp: desc}, limit: 50) { id permitId datasetId amount txHash timestamp revoked } }",
+          "query Purchases($buyer: String!) { Purchase(where: {buyer: {_eq: $buyer}}, order_by: {timestamp: desc}, limit: 50) { id permitId datasetId amount txHash timestamp revoked } Withdrawal(where: {recipient: {_eq: $buyer}}, order_by: {timestamp: desc}, limit: 50) { id recipient amount txHash timestamp } }",
         variables: { buyer },
       }),
       signal: AbortSignal.timeout(10000),
@@ -37,7 +37,18 @@ export async function GET() {
         }),
       )
       .parse(payload.data.Purchase);
-    return Response.json({ configured: true, purchases });
+    const withdrawals = z
+      .array(
+        z.object({
+          id: z.string(),
+          recipient: z.string(),
+          amount: z.union([z.string(), z.number()]),
+          txHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
+          timestamp: z.union([z.string(), z.number()]),
+        }),
+      )
+      .parse(payload.data.Withdrawal);
+    return Response.json({ configured: true, purchases, withdrawals });
   } catch (e) {
     return fail(e);
   }

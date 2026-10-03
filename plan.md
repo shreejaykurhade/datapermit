@@ -22,6 +22,23 @@
 
 ## Monad and sponsor integrations
 
+## Contribution and revenue extension
+
+- [x] Fifty questions with 4×4 image grids, written answers, and saved progress.
+- [x] English, Hindi, Marathi, and Tamil task instructions/answer language.
+- [x] Company campaign creation, assigned experts, and imported image-question JSON.
+- [x] Signed live submissions with complete-answer and consent validation.
+- [x] Qwen clustering by question and language; explicit provider consent and frozen submissions.
+- [x] Independent expert verification with signed, immutable decisions.
+- [x] Company-only approved export with contribution/review attribution.
+- [x] Prepare reviewed records for marketplace publishing and company-chosen payout shares.
+- [x] Compact dataset family/version registry; no per-answer or batch-anchor contract.
+- [x] Immutable contributor/verifier shares, accrual on purchase, and recipient withdrawal.
+- [x] Role, version, rounding, allocation, and withdrawal tests in local EVM/database.
+- [ ] Deploy updated SQL, contract, and Envio schema for live verification.
+
+## Sponsor implementation
+
 - [x] Mera: real passkey onboarding and signing, separate from demo sessions.
 - [x] Wallet authentication: single-use challenge, signature recovery, HttpOnly session, rate limits.
 - [x] Monad: ERC-20 permit contract, registration/receipt verification, and deployment script.
@@ -45,12 +62,12 @@
 - [x] Actual SQL atomic quota and access denial tests using PGlite.
 - [x] Contract compilation and local EVM tests for payment, terms, payout, versions, and revocation.
 - [x] Browser flow and desktop/mobile screenshots inspected; one selector fixed.
-- [x] Final production-server browser/API regression: six tests pass under Node.js 24.
+- [x] Final production-server browser/API regression: seven tests pass under Node.js 24.
 - [x] Final production Next.js build under Node.js 24; root/indexer/CRE dependency audits clean.
 - [x] CRE SDK 1.23.0 workflow independently typechecked.
 - [ ] CRE CLI simulation and deployed workflow: external CLI/account/secret required.
 - [ ] Aurora funded mainnet quote/intent/settlement: external API key and supported token required.
-- [x] Ten unit/database/contract tests pass under Node.js 24.
+- [x] Fifteen unit/database/contract tests pass under Node.js 24.
 - [ ] Envio code generation/handler types: native Windows binary unavailable; requires WSL/Envio Cloud.
 - [x] README, environment example, SQL schema, and Vercel setup.
 - [x] Document credentials/funding/deployment still needed for live verification.

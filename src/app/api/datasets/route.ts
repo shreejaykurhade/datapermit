@@ -4,6 +4,7 @@ import { parseUnits } from "viem";
 import { db, user, fail, sameOrigin, body } from "@/lib/server";
 import { publishSchema } from "@/lib/validation";
 import { encryptedDatasetSchema } from "@/lib/validation";
+import { validateShares } from "@/lib/revenue";
 import { wrapGatewayKey, decryptGatewayDataset } from "@/lib/encryption-server";
 import {
   contractAddress,
@@ -18,7 +19,7 @@ export async function GET() {
     const { data, error } = await db()
       .from("datasets")
       .select(
-        "id,title,description,category,language,publisher,price,duration_days,quota,version,terms,digest,record_count,sample,created_at",
+        "id,title,description,category,language,publisher,price,duration_days,quota,version,terms,digest,record_count,sample,created_at,family_id,revenue_shares",
       )
       .order("created_at", { ascending: false });
     if (error) throw new Error("Could not load datasets.");
@@ -33,10 +34,15 @@ export async function POST(request: Request) {
     const publisher = await user();
     const payload = await body(request);
     const parsed = publishSchema.parse(payload);
+    const revenueShares = validateShares(parsed.revenueShares, publisher);
     if (!contractAddress || !tokenAddress)
       throw new Error("Contract is not configured.");
     const id = payload.id;
-    if (typeof id !== "string" || !/^[-a-z0-9]{5,80}$/.test(id))
+    if (
+      typeof id !== "string" ||
+      !parsed.familyId ||
+      id !== `${parsed.familyId}@${parsed.version}`
+    )
       throw new Error("Invalid dataset ID.");
     const digest =
       "0x" +
@@ -63,6 +69,33 @@ export async function POST(request: Request) {
       registered[5] !== termsKey(parsed.terms)
     )
       throw new Error("Dataset registration does not match submitted data.");
+    const [version, onchainShares] = await Promise.all([
+      chainClient.readContract({
+        address: contractAddress,
+        abi: permitAbi,
+        functionName: "versions",
+        args: [datasetKey(id)],
+      }),
+      chainClient.readContract({
+        address: contractAddress,
+        abi: permitAbi,
+        functionName: "getShares",
+        args: [datasetKey(id)],
+      }),
+    ]);
+    const actualShares = onchainShares.map((s) => ({
+      recipient: s.recipient.toLowerCase(),
+      bps: s.bps,
+      role: s.role === 1 ? "contributor" : "verifier",
+    }));
+    if (
+      version[0] !== datasetKey(parsed.familyId) ||
+      version[1] !== termsKey(parsed.version) ||
+      JSON.stringify(actualShares) !== JSON.stringify(revenueShares)
+    )
+      throw new Error(
+        "Registered ownership, version, or revenue split does not match.",
+      );
     let encryptedData = null,
       gatewayEnvelope = null;
     if (payload.encrypted) {
@@ -91,6 +124,8 @@ export async function POST(request: Request) {
         duration_days: parsed.durationDays,
         quota: parsed.quota,
         version: parsed.version,
+        family_id: parsed.familyId,
+        revenue_shares: revenueShares,
         terms: parsed.terms,
         digest,
         records: encryptedData ? [] : parsed.records,

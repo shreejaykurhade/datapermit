@@ -11,6 +11,15 @@ test("API rejects anonymous access and never exposes credentials", async ({
   expect(access.status()).toBe(401);
   const permits = await request.get("/api/permits");
   expect(permits.status()).toBe(401);
+  expect((await request.get("/api/contributions")).status()).toBe(401);
+  expect(
+    (
+      await request.post("/api/contributions", {
+        data: { action: "export", campaignId: "private" },
+      })
+    ).status(),
+  ).toBe(401);
+  expect((await request.get("/api/earnings")).status()).toBe(401);
   expect((await request.get("/api/account")).status()).toBe(401);
   expect((await request.get("/api/vault?id=private")).status()).toBe(401);
   expect(

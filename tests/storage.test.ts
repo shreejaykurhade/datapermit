@@ -60,3 +60,101 @@ test("Postgres quota consumption is atomic and denies revoked, expired and unkno
   );
   await database.close();
 });
+test("campaign submission locking enforces roles, complete submissions, uniqueness and closed status", async () => {
+  const database = new PGlite();
+  await database.exec(
+    "create role anon;create role authenticated;create role service_role;",
+  );
+  await database.exec(fs.readFileSync("supabase/schema.sql", "utf8"));
+  await database.query(
+    "insert into campaigns(id,title,brief,company,verifiers,questions) values('campaign','Collection','Company brief','company',array['expert'],'[]')",
+  );
+  const answers = JSON.stringify(
+    Array.from({ length: 50 }, (_, i) => ({
+      questionId: "q" + String(i + 1).padStart(2, "0"),
+    })),
+  );
+  await assert.rejects(
+    database.query("select submit_contribution($1,$2,$3,$4::jsonb,$5)", [
+      "s1",
+      "campaign",
+      "company",
+      answers,
+      "sig",
+    ]),
+  );
+  await assert.rejects(
+    database.query("select submit_contribution($1,$2,$3,$4::jsonb,$5)", [
+      "s1",
+      "campaign",
+      "expert",
+      answers,
+      "sig",
+    ]),
+  );
+  await assert.rejects(
+    database.query("select submit_contribution($1,$2,$3,$4::jsonb,$5)", [
+      "s1",
+      "campaign",
+      "participant",
+      "[]",
+      "sig",
+    ]),
+  );
+  await database.query("select submit_contribution($1,$2,$3,$4::jsonb,$5)", [
+    "s1",
+    "campaign",
+    "participant",
+    answers,
+    "sig",
+  ]);
+  await assert.rejects(
+    database.query("select submit_contribution($1,$2,$3,$4::jsonb,$5)", [
+      "s2",
+      "campaign",
+      "participant",
+      answers,
+      "sig",
+    ]),
+  );
+  await assert.rejects(
+    database.query("select close_campaign('campaign','stranger')"),
+  );
+  await database.query("select close_campaign('campaign','company')");
+  await assert.rejects(
+    database.query("select submit_contribution($1,$2,$3,$4::jsonb,$5)", [
+      "s2",
+      "campaign",
+      "other",
+      answers,
+      "sig",
+    ]),
+  );
+  const clusters = JSON.stringify([
+    {
+      id: "c1",
+      content_hash: "hash",
+      title: "Group",
+      summary: "Group summary",
+      language: "en",
+      members: ["s1"],
+      provider: "Qwen",
+      model: "configured",
+    },
+  ]);
+  await database.query("select save_question_clusters($1,$2,$3,$4::jsonb)", [
+    "campaign",
+    "q01",
+    "company",
+    clusters,
+  ]);
+  await assert.rejects(
+    database.query("select save_question_clusters($1,$2,$3,$4::jsonb)", [
+      "campaign",
+      "q01",
+      "company",
+      clusters,
+    ]),
+  );
+  await database.close();
+});

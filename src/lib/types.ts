@@ -1,3 +1,4 @@
+import type { RevenueShare } from "./revenue";
 export type RecordRow = { input: string; expected: string; category: string };
 export type Dataset = {
   id: string;
@@ -14,6 +15,8 @@ export type Dataset = {
   digest: string;
   records: RecordRow[];
   createdAt: string;
+  familyId?: string;
+  revenueShares?: RevenueShare[];
 };
 export type Permit = {
   id: string;
@@ -39,4 +42,5 @@ export type DemoState = {
   datasets: Dataset[];
   permits: Permit[];
   activity: Activity[];
+  earnings?: Record<string, string>;
 };

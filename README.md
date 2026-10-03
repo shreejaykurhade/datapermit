@@ -4,6 +4,14 @@
 
 Primary hackathon track: **Trust, Identity & AI Infrastructure**. See [plan.md](plan.md) for the end-to-end checklist.
 
+## Human contributions and revenue sharing
+
+**Contributions** provides 50 questions with 4×4 image selection, written answers, and English/Hindi/Marathi/Tamil task instructions. Companies request data, Qwen clusters answers by question and language, assigned independent experts verify clusters, and approved data is prepared for publishing. Each dataset version locks the company owner and chosen contributor/verifier payout shares. Purchases accrue earnings; each recipient withdraws their own funds. Full questions, answers, and reviews stay off-chain.
+
+See [the contribution and revenue guide](docs/contributions-and-revenue.md) for workflows, compact storage, recipient limits, and the updated contract/database migration. **A new contract deployment is required for live revenue sharing.**
+
+![Contribution studio with a 4×4 image task](docs/images/contributions.png)
+
 ## What DataPermit does
 
 DataPermit turns specialist AI evaluation datasets into licensed products. Publishers upload a collection, define its price and usage terms, and protect the full records with encryption. Buyers preview samples, approve a purchase, and receive expiring, revocable API access with a request allowance. An AI procurement agent helps find a suitable collection and evaluate a licensed record.
@@ -18,17 +26,17 @@ The initial customer is an AI team evaluating regional-language support or agent
 
 Next.js App Router, React, TypeScript, viem, Supabase/Postgres, and Solidity. The web app runs on Vercel using Node.js 24. Envio and Chainlink CRE are separate services.
 
-| Path | Purpose |
-| --- | --- |
-| `src/app/` | Application and authenticated API routes |
-| `src/components/` | Marketplace, publisher, access, and sponsor interfaces |
-| `src/lib/` | Passkey accounts, encryption, validation, and service adapters |
-| `contracts/` | Monad dataset registration and permit contract |
-| `supabase/schema.sql` | Storage, access quotas, and provisioning records |
-| `envio/` | Independent event indexer |
-| `cre/` | Independent access-provisioning workflow |
-| `tests/` | Unit, contract, database, and browser checks |
-| `docs/` | Sponsor setup and demo/submission instructions |
+| Path                  | Purpose                                                        |
+| --------------------- | -------------------------------------------------------------- |
+| `src/app/`            | Application and authenticated API routes                       |
+| `src/components/`     | Marketplace, publisher, access, and sponsor interfaces         |
+| `src/lib/`            | Passkey accounts, encryption, validation, and service adapters |
+| `contracts/`          | Monad dataset registration and permit contract                 |
+| `supabase/schema.sql` | Storage, access quotas, and provisioning records               |
+| `envio/`              | Independent event indexer                                      |
+| `cre/`                | Independent access-provisioning workflow                       |
+| `tests/`              | Unit, contract, database, and browser checks                   |
+| `docs/`               | Sponsor setup and demo/submission instructions                 |
 
 For integration configuration, use [the sponsor setup guide](docs/sponsor-setup.md). For the remaining launch tasks, use [plan.md](plan.md).
 
@@ -62,7 +70,7 @@ Demo state lives in localStorage on this browser. Demo credits are not money; no
 - Expiring permits, revocation, request allowances, access tokens, and token rotation.
 - Real Mera PRF passkey creation/recovery and EVM signing. Private keys remain in memory for at most ten minutes, never persisted.
 - Server challenges, wallet signatures, single-use nonces, HttpOnly sessions, and rate limits.
-- Monad ERC-20 payments directly to publishers, immutable registrations, purchase events, and revocation.
+- Monad ERC-20 purchases with company/contributor/verifier revenue accrual and withdrawals, immutable registrations, purchase events, and revocation.
 - Server verification of registration parameters and purchase receipts before storing datasets/issuing permits.
 - Supabase persistence and atomic Postgres quota consumption with access receipts.
 - Qwen procurement tools: search catalog → inspect sample → propose license → human approval. No autonomous spending.
@@ -119,7 +127,7 @@ The anon key is unused and can remain empty. Never expose service/provider keys 
 
 ### 2. Contract and token
 
-Choose a vetted standard ERC-20 on **Monad testnet**, with a boolean-returning `transferFrom`. Do not configure a mainnet AUSD address on testnet. No particular testnet token is represented as official AUSD. Fee-on-transfer tokens are unsupported. The publisher receives the full amount; contributor splits are not implemented.
+Choose a vetted standard ERC-20 on **Monad testnet**, with a boolean-returning `transferFrom`. Do not configure a mainnet AUSD address on testnet. No particular testnet token is represented as official AUSD. Fee-on-transfer tokens are unsupported. Each version locks its company-chosen contributor/verifier shares. Purchases credit all recipients; each wallet withdraws its accumulated earnings. The company receives the remainder.
 
 Fund your deployment account with testnet MON and set:
 
@@ -222,7 +230,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Ten unit/database/contract tests and six browser tests pass. Tests exercise encrypted recovery, wrong-passkey/context denial, ciphertext tampering, Aurora destination/recipient restrictions, CRE idempotency and pending denial, permit denial, validation, digests, actual SQL atomic quotas, failed payment, accepted terms, publisher payout, immutable versions, unauthorized revocation, browser persistence, publishing/search, and mobile overflow. EVM tests run locally using Cancun, not live Monad. SQL tests use PGlite and the real schema. Screenshots are generated in `artifacts/`.
+Fifteen unit/database/contract tests pass; seven browser tests pass, including the complete contribution → review → publishing → shared earnings flow. Tests exercise encrypted recovery, wrong-passkey/context denial, ciphertext tampering, Aurora destination/recipient restrictions, CRE idempotency and pending denial, permit denial, validation, digests, actual SQL atomic quotas, failed payment, accepted terms, publisher payout, immutable versions, unauthorized revocation, browser persistence, publishing/search, and mobile overflow. EVM tests run locally using Cancun, not live Monad. SQL tests use PGlite and the real schema. Screenshots are generated in `artifacts/`.
 
 ## Hackathon evidence
 

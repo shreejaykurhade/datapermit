@@ -8,6 +8,7 @@ export function compile() {
         language: "Solidity",
         sources: { "DataPermit.sol": { content: source } },
         settings: {
+          viaIR:true,
           optimizer: { enabled: true, runs: 200 },
           evmVersion: "cancun",
           outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } },

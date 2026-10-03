@@ -11,3 +11,10 @@ type Purchase {
   timestamp: BigInt!
   revoked: Boolean!
 }
+type Withdrawal {
+ id: ID!
+ recipient: String!
+ amount: BigInt!
+ txHash: String!
+ timestamp: BigInt!
+}

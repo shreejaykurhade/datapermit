@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { revenueSharesSchema } from "./revenue";
 const base64 = z
   .string()
   .min(4)
@@ -23,6 +24,7 @@ export const publishSchema = z.object({
     "Customer support",
     "Language understanding",
     "Agent safety",
+    "Image annotation",
   ]),
   price: z
     .string()
@@ -30,7 +32,15 @@ export const publishSchema = z.object({
     .refine((v) => Number(v) > 0),
   durationDays: z.number().int().min(1).max(365),
   quota: z.number().int().min(1).max(100000),
-  version: z.string().min(1).max(30),
+  version: z
+    .string()
+    .regex(/^\d+(\.\d+){0,2}$/)
+    .max(30),
+  familyId: z
+    .string()
+    .regex(/^[-a-z0-9]{5,80}$/)
+    .optional(),
+  revenueShares: revenueSharesSchema,
   terms: z.string().min(20).max(3000),
   records: z.array(recordSchema).min(3).max(1000),
 });
