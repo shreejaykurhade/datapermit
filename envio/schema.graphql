@@ -1,0 +1,13 @@
+type Purchase {
+  id: ID!
+  permitId: String!
+  datasetId: String!
+  buyer: String!
+  publisher: String!
+  amount: BigInt!
+  expiresAt: BigInt!
+  quota: BigInt!
+  txHash: String!
+  timestamp: BigInt!
+  revoked: Boolean!
+}

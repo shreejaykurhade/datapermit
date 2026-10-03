@@ -1,0 +1,16 @@
+name: datapermit-indexer
+description: DataPermit purchases, payment receipts, and revocations on Monad testnet
+handler: src/handlers.ts
+contracts:
+  - name: DataPermit
+    events:
+      - event: "PermitPurchased(uint256 indexed permitId, bytes32 indexed datasetId, address indexed buyer, address publisher, uint256 amount, uint64 expiresAt, uint32 quota)"
+      - event: "PermitRevoked(uint256 indexed permitId)"
+chains:
+  - id: 10143
+    rpc: https://testnet-rpc.monad.xyz
+    start_block: 0
+    contracts:
+      - name: DataPermit
+        # Replace with your deployed contract and deployment block before running.
+        address: "0x1111111111111111111111111111111111111111"
